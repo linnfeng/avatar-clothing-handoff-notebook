@@ -1,0 +1,64 @@
+# Publish the existing project-associated guide for https://rbxshirtmaker.com/.
+# README remains unchanged; the build verifies its complete known source first.
+name: Publish avatar handoff documentation
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify complete reviewed README and project identity
+        run: |
+          python3 - <<'PYCODE'
+          from hashlib import sha256
+          from pathlib import Path
+          data = Path('README.md').read_bytes()
+          if sha256(data).hexdigest() != 'dac2b58bd8067ebdd69db64c9b4d1b383a439640897006ee2681f5c19604a2a7':
+              raise SystemExit('Reviewed README changed; refusing deployment')
+          if b'https://rbxshirtmaker.com/' not in data:
+              raise SystemExit('Expected project resource is missing')
+          PYCODE
+      - name: Prepare index from the complete existing guide
+        run: |
+          test ! -e index.md
+          test ! -e index.html
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          text = Path('README.md').read_text()
+          text = text.replace(
+              'Project-associated browser resource: https://rbxshirtmaker.com/',
+              'Project-associated browser resource: [https://rbxshirtmaker.com/](https://rbxshirtmaker.com/)')
+          Path('index.md').write_text('---\nlayout: default\n---\n\n' + text)
+          PYCODE
+      - uses: actions/configure-pages@v5
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the reviewed documentation
+        id: deployment
+        uses: actions/deploy-pages@v4
